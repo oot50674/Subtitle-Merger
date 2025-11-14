@@ -1,0 +1,14 @@
+version: "3.8"
+services:
+  web:
+    build: .
+    ports:
+      - "2121:2121"
+    volumes:
+      - .:/app:rw
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PORT=2121
+    restart: unless-stopped
+
+

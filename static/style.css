@@ -1,0 +1,128 @@
+/* 기본 설정 */
+body {
+    font-family: 'Noto Sans KR', sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f9f9f9;
+    color: #333;
+}
+
+.container {
+    max-width: 800px;
+    margin: 40px auto;
+    padding: 20px;
+    background-color: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+    font-size: 2em;
+    margin-bottom: 20px;
+    text-align: center;
+    color: #2c3e50;
+}
+
+textarea {
+    width: 95%;
+    height: 150px;
+    padding: 10px;
+    margin-bottom: 20px;
+    border: 1px solid #ccd0d5;
+    border-radius: 4px;
+    font-size: 1em;
+    resize: vertical;
+    background-color: #fdfdfd;
+}
+
+button {
+    padding: 10px 20px;
+    margin: 5px;
+    border: none;
+    border-radius: 4px;
+    font-size: 1em;
+    cursor: pointer;
+    color: #fff;
+    background-color: #3498db;
+    transition: background-color 0.3s ease;
+}
+
+button:hover {
+    background-color: #2980b9;
+}
+
+label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+.option-group {
+    margin-bottom: 20px;
+}
+
+.option-group label {
+    margin-bottom: 5px;
+    font-weight: normal;
+}
+
+.option-group input[type="number"],
+.option-group input[type="checkbox"],
+.option-group input[type="file"] {
+    margin-right: 10px;
+    vertical-align: middle;
+}
+
+input[type="number"] {
+    width: 60px;
+    padding: 5px;
+    border: 1px solid #ccd0d5;
+    border-radius: 4px;
+    font-size: 1em;
+}
+
+#download-links {
+    margin-top: 30px;
+}
+
+#download-links a {
+    display: block;
+    margin-bottom: 10px;
+    color: #3498db;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+#download-links a:hover {
+    text-decoration: underline;
+}
+
+#copy-btn {
+    background-color: #2ecc71;
+}
+
+#copy-btn:hover {
+    background-color: #27ae60;
+}
+
+#save-all-btn { margin-bottom : 40px; }
+
+/* 반응형 디자인 */
+@media (max-width: 600px) {
+    .container {
+        margin: 20px;
+        padding: 15px;
+    }
+
+    h1 {
+        font-size: 1.5em;
+    }
+
+    button {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+
+    #download-links a {
+        font-size: 0.9em;
+    }
+}
