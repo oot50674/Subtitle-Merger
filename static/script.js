@@ -6,9 +6,11 @@ $(document).ready(function() {
     $('#enable-min-length-merge').trigger('change');
     $('#enable-ai-merge').trigger('change');
     $('#enable-min-duration-remove').trigger('change'); // 최소 자막 길이 제거 옵션 초기 상태 설정
+    $('#enable-segment-analyzer').trigger('change');
     
     // 캐시에서 자막 병합 옵션 설정 값 복구
     var cachedOptions = localStorage.getItem('subtitleMergeOptions');
+    var defaultAnalyzerLanguage = 'en';
     if (cachedOptions) {
         var options = JSON.parse(cachedOptions);
         
@@ -19,7 +21,8 @@ $(document).ready(function() {
         $('#enable-end-start-merge').prop('checked', options.enableEndStartMerge);
         $('#enable-min-length-merge').prop('checked', options.enableMinLengthMerge);
         $('#enable-ai-merge').prop('checked', options.enableAIMerge);
-        $('#enable-min-duration-remove').prop('checked', options.enableMinDurationRemove); // 최소 자막 길이 제거 옵션 복구
+        $('#enable-min-duration-remove').prop('checked', options.enableMinDurationRemove);
+        $('#enable-segment-analyzer').prop('checked', !!options.enableSegmentAnalyzer);
         
         // 숫자 입력 필드 설정 복구
         $('#min-text-length').val(options.minTextLength);
@@ -29,7 +32,20 @@ $(document).ready(function() {
         $('#max-duplicate-gap').val(options.maxDuplicateGap);
         $('#max-end-start-gap').val(options.maxEndStartGap);
         // similarityThreshold option removed
-        $('#min-duration-ms').val(options.minDurationMs || 300); // 최소 자막 길이 제거 옵션 값 복구
+        $('#min-duration-ms').val(options.minDurationMs || 300);
+        var cachedThreshold = typeof options.segmentAnalyzerThreshold === 'number'
+            ? options.segmentAnalyzerThreshold
+            : 0.7;
+        $('#segment-analyzer-threshold').val(cachedThreshold);
+        var cachedLanguage = options.segmentAnalyzerLanguage;
+        if (typeof cachedLanguage !== 'string') {
+            cachedLanguage = defaultAnalyzerLanguage;
+        } else {
+            cachedLanguage = cachedLanguage.toLowerCase();
+        }
+        $('#segment-analyzer-language').val(cachedLanguage);
+    } else {
+        $('#segment-analyzer-language').val(defaultAnalyzerLanguage);
     }
 
     // 개별 체크박스 변경 시 관련 숫자 입력 필드 활성화/비활성화
@@ -54,6 +70,12 @@ $(document).ready(function() {
     $('#enable-min-duration-remove').change(function() { // 최소 자막 길이 제거 옵션 활성화/비활성화
         $('#min-duration-ms').prop('disabled', !$(this).is(':checked'));
     });
+
+    $('#enable-segment-analyzer').change(function() {
+        var disabled = !$(this).is(':checked');
+        $('#segment-analyzer-threshold').prop('disabled', disabled);
+        $('#segment-analyzer-language').prop('disabled', disabled);
+    });
     
     // 초기 상태 설정 트리거
     $('#enable-basic-merge').trigger('change');
@@ -62,10 +84,17 @@ $(document).ready(function() {
     $('#enable-end-start-merge').trigger('change');
     // similarity merge option removed
     $('#enable-min-duration-remove').trigger('change'); // 최소 자막 길이 제거 옵션 초기 상태 트리거
+    $('#enable-segment-analyzer').trigger('change');
 
     $('#process-btn').click(function() {
         var files = $('#srt-files')[0].files;
         // 자막 병합 옵션 설정
+        var analyzerThreshold = parseFloat($('#segment-analyzer-threshold').val());
+        if (isNaN(analyzerThreshold)) {
+            analyzerThreshold = 0.7;
+        }
+
+        var analyzerLanguage = $('#segment-analyzer-language').val() || 'en';
         var options = {
             enableBasicMerge: $('#enable-basic-merge').is(':checked'),      // 기본 병합 기능 활성화 여부
             enableSpaceMerge: $('#enable-space-merge').is(':checked'),      // 병합 시 띄어쓰기 추가 여부
@@ -73,7 +102,8 @@ $(document).ready(function() {
             enableEndStartMerge: $('#enable-end-start-merge').is(':checked'),  // 앞 자막의 뒷 부분과 다음 자막의 내용이 동일한 경우 병합 활성화 여부
             enableMinLengthMerge: $('#enable-min-length-merge').is(':checked'), // 병합 시 각 자막의 최소 문자 수 조건 활성화 여부
             enableAIMerge: $('#enable-ai-merge').is(':checked'),            // AI 기반 자막 병합 활성화 여부
-            enableMinDurationRemove: $('#enable-min-duration-remove').is(':checked'), // 최소 자막 길이 제거 기능 활성화 여부
+            enableMinDurationRemove: $('#enable-min-duration-remove').is(':checked'),
+            enableSegmentAnalyzer: $('#enable-segment-analyzer').is(':checked'),
             minTextLength: parseInt($('#min-text-length').val()) || 1,      // 병합 시 각 자막의 최소 문자 수
             maxMergeCount: parseInt($('#max-merge-count').val()) || 2,      // 병합할 최대 자막 개수
             maxTextLength: parseInt($('#max-text-length').val()) || 50,     // 최대 병합 문자열 길이
@@ -81,26 +111,19 @@ $(document).ready(function() {
             maxDuplicateGap: parseInt($('#max-duplicate-gap').val()) || 300, // 중복 병합 시간 간격 (밀리초)
             maxEndStartGap: parseInt($('#max-end-start-gap').val()) || 300,   // 앞뒤 자막 병합 시간 간격 (밀리초)
             // similarityThreshold removed
-            minDurationMs: parseInt($('#min-duration-ms').val()) || 300 // 최소 자막 길이 제거 기준 (ms)
+            minDurationMs: parseInt($('#min-duration-ms').val()) || 300,
+            segmentAnalyzerThreshold: analyzerThreshold,
+            segmentAnalyzerLanguage: analyzerLanguage.toLowerCase()
         };
 
         // 디버깅용 옵션 출력 - 화면에도 표시
         console.log("병합 옵션:", options);
-        var debugInfo = $('<div class="debug-info">')
-            .html('<strong>옵션 디버그 정보:</strong><br>' + 
-                  '최대 병합 문자열 길이: ' + options.maxTextLength + '<br>' +
-                  '병합할 자막 개수: ' + options.maxMergeCount + '<br>' +
-                  '최소 문자 수: ' + options.minTextLength + '<br>' +
-                  '최소 문자 수 사용: ' + options.enableMinLengthMerge + '<br>' +
-                  '최소 자막 길이 제거 사용: ' + options.enableMinDurationRemove + '<br>' + // 최소 자막 길이 제거 옵션 디버그 정보 추가
-                  '최소 자막 길이 (ms): ' + options.minDurationMs);
-                  
-        $('#download-links').append(debugInfo);
         // 옵션 설정 캐시 저장
         localStorage.setItem('subtitleMergeOptions', JSON.stringify(options));
 
         // 다운로드 링크 영역 초기화
         $('#download-links').empty();
+        $('#save-all-wrapper').remove();
 
         if (files.length > 0) {
             // FormData 객체 생성
@@ -134,19 +157,20 @@ $(document).ready(function() {
                             var countInfo = $('<div class="line-count">')
                                 .text('병합 전: ' + file.beforeCount + ' 라인, 병합 후: ' + file.afterCount + ' 라인');
                             
-                            $('#download-links')
-                                .append(link)
-                                .append(countInfo)
-                                .append('<br>');
+                    $('#download-links')
+                        .append($('<div class="download-entry">').append(link, countInfo));
                             
                             // 처리된 파일들을 배열에 저장
-                            processedFiles.push({
-                                name: 'merged_' + file.name,
-                                content: file.content
-                            });
+                        processedFiles.push({
+                            name: 'merged_' + file.name,
+                            content: file.content
                         });
-                        // 전체 저장 버튼 추가
-                        addSaveAllButton();
+                    });
+                        if (processedFiles.length > 1) {
+                            addSaveAllButton();
+                        } else {
+                            $('#save-all-wrapper').remove();
+                        }
                     } else if (response.error) {
                         alert('오류: ' + response.error);
                     }
@@ -293,19 +317,16 @@ function toggleInputGroup(groupSelector, enable) {
 }
 
 function addSaveAllButton() {
-    // "전체 저장" 버튼이 이미 존재하지 않는 경우에만 추가
-    if ($('#save-all-btn').length === 0) {
-        // "전체 저장" 버튼 생성
+    if ($('#save-all-wrapper').length === 0) {
+        var wrapper = $('<div id="save-all-wrapper" class="save-all-wrapper"></div>');
         var saveAllButton = $('<button id="save-all-btn">전체 저장 (ZIP)</button>');
-        $('#download-links').prepend(saveAllButton);
-        $('#download-links').prepend('<br>');
+        wrapper.append(saveAllButton);
+        $('#download-links').prepend(wrapper);
         $('#save-all-btn').click(function() {
             var zip = new JSZip();
-            // 처리된 파일들을 ZIP에 추가
             processedFiles.forEach(function(file) {
                 zip.file(file.name, file.content);
             });
-            // ZIP 파일 생성 및 다운로드
             zip.generateAsync({ type: 'blob' }).then(function(content) {
                 saveAs(content, 'merged_files.zip');
             });

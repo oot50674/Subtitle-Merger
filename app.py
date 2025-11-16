@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, TypedDict
 from flask import Flask, jsonify, render_template, request
 
 from utils.common import is_short_subtitle
+from utils.segment_analyzer import analyze_segment
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
@@ -177,6 +178,14 @@ def merge_basic_entries(entries: List[SubtitleEntry], options: Dict[str, Any]) -
     enable_space_merge = options.get('enableSpaceMerge', False)
     enable_min_length_merge = options.get('enableMinLengthMerge', False)
     min_text_length = options.get('minTextLength', 1)
+    enable_segment_analyzer = options.get('enableSegmentAnalyzer', False)
+    raw_threshold = options.get('segmentAnalyzerThreshold', 0.7)
+    try:
+        analyzer_threshold = float(raw_threshold)
+    except (TypeError, ValueError):
+        analyzer_threshold = 0.7
+    analyzer_threshold = max(0.0, min(1.0, analyzer_threshold))
+    analyzer_language = str(options.get('segmentAnalyzerLanguage', 'en') or 'en').lower()
 
     logging.info(
         "병합 옵션: max_merge_count=%s, max_text_length=%s, max_basic_gap=%s",
@@ -204,6 +213,23 @@ def merge_basic_entries(entries: List[SubtitleEntry], options: Dict[str, Any]) -
             current_text = merged_entry['text'].strip()
             next_text = next_entry['text'].strip()
             combined_text = current_text + (' ' if enable_space_merge else '') + next_text
+
+            if enable_segment_analyzer:
+                if current_text.endswith('.'):
+                    logging.info("형태소 분석 옵션 활성화 시 마침표 종료 문장 병합 중단")
+                    break
+                try:
+                    analysis = analyze_segment(current_text, language=analyzer_language)
+                    if analysis.completeness_score > analyzer_threshold:
+                        logging.info(
+                            "형태소 분석 점수 초과로 병합 중단: score=%.3f, threshold=%.3f",
+                            analysis.completeness_score,
+                            analyzer_threshold,
+                        )
+                        break
+                except Exception as exc:  # pragma: no cover - 방어적 코드
+                    logging.error("형태소 분석 중 오류: %s", exc)
+                    break
 
             if len(combined_text) > max_text_length:
                 logging.info("최대 길이 초과로 병합 중단: %s > %s", len(combined_text), max_text_length)

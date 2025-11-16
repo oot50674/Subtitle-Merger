@@ -3,178 +3,183 @@
 <head>
     <meta charset="UTF-8">
     <title>자막 병합 도구</title>
-    <!-- JSZip 라이브러리 추가 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
-    <!-- FileSaver 라이브러리 추가 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <!-- Google Fonts 추가 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- 원하는 한국어 폰트로 변경 가능 -->
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR&display=swap" rel="stylesheet">
-    
-    <!-- css 파일 링크 -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-	<script src="{{ url_for('static', filename='script.js') }}"></script>
-    <script>
-        $(document).ready(function() {
-            $('#srt-files').change(function() {
-                var fileList = $('#file-list');
-                fileList.empty();
-                var files = this.files;
-                var fileNames = [];
-                for (var i = 0; i < files.length; i++) {
-                    fileNames.push(files[i].name);
-                }
-                var displayText = fileNames.join(', ');
-                if (displayText.length > 100) {
-                    displayText = displayText.substring(0, 97) + '...';
-                }
-                fileList.text(displayText);
-                fileList.attr('title', fileNames.join('\n'));
-                $('#file-count').text(files.length + '개의 파일이 선택되었습니다.');
-            });
-        });
-    </script>
-    <style>
-        /* 임시로 추가한 스타일 (필요 시 style.css로 이동 가능) */
-        .line-count {
-            margin-top: 5px;
-            font-size: 0.9em;
-            color: #555;
-        }
-        .file-count {
-            margin-bottom: 10px;
-        }
-        .option-group {
-            margin-bottom: 15px;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-        }
-        input[type="number"] {
-            width: 60px;
-            margin-left: 5px;
-        }
-        .custom-file-upload {
-            display: inline-block;
-            padding: 6px 12px;
-            cursor: pointer;
-            background-color: #007bff;
-            color: white;
-            border: 1px solid #007bff;
-            border-radius: 4px;
-        }
-        .custom-file-upload:hover {
-            background-color: #0056b3;
-            border-color: #0056b3;
-        }
-        #srt-files {
-            display: none;
-        }
-        #file-list {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 100%;
-            cursor: help;
-        }
-    </style>
 </head>
-<body>
-<div class="container">
-    <h1>자막 병합 도구</h1>
+<body class="app-body">
 
-    <!-- 파일 업로드 기능 추가 -->
-    <div class="option-group">
-        <label for="srt-files" class="custom-file-upload">
-            파일 선택
-        </label>
-        <input type="file" id="srt-files" multiple accept=".srt">
-        <div id="drop-zone" style="border: 2px dashed #ccc; padding: 20px; text-align: center; cursor: pointer;">
-            여기에 파일을 드래그하여 업로드하세요
-        </div>
-        <div id="file-count"></div>
-        <div id="file-list"></div>
+<header id="app-header" class="layout-header">
+    
+</header>
+
+<main id="app-main" class="layout-main">
+    <div id="main-container" class="container app-grid">
+        <section id="source-section" class="content-section panel-section">
+            <article id="source-io-article" class="panel-card io-card">
+                <div class="panel-header">
+                    <h2 class="panel-title">입력 및 병합</h2>
+                </div>
+                <div class="panel-body">
+                    <div id="io-layout" class="io-stack">
+                        <div id="io-upload-column" class="io-column io-column-upload">
+                            <h3 class="io-column-title">파일 업로드</h3>
+                            <p class="io-column-subtitle">파일을 드래그하거나 아래 영역을 클릭하여 업로드하세요.</p>
+                            <div id="file-form" class="file-form">
+                                <input type="file" id="srt-files" class="sr-only-input" multiple accept=".srt">
+                                <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="파일을 드롭하거나 클릭하여 선택">
+                                    여기에 파일을 드래그하거나 클릭하여 업로드하세요
+                                </div>
+                            </div>
+                            <div id="file-count" class="file-count-display"></div>
+                            <div id="file-list" class="file-list-display"></div>
+                        </div>
+                        <div id="io-text-column" class="io-column io-column-text">
+                            <h3 class="io-column-title">텍스트 입력</h3>
+                            <p class="io-column-subtitle">파일 대신 직접 SRT 내용을 붙여넣을 수 있습니다.</p>
+                            <label for="input-srt" class="sr-only-label">SRT 자막 입력</label>
+                            <textarea id="input-srt" rows="15" class="app-textarea" placeholder="여기에 SRT 자막을 입력하세요"></textarea>
+                        </div>
+                    </div>
+                    <div id="io-actions" class="io-actions">
+                        <button id="process-btn" class="primary-btn wide-btn">자막 병합</button>
+                    </div>
+                </div>
+            </article>
+
+            <article id="result-article" class="panel-card result-card">
+                <div class="panel-header">
+                    <h2 class="panel-title">병합 결과</h2>
+                    <p class="panel-subtitle">완료 후 다운로드 링크와 줄 수 정보를 확인하세요.</p>
+                </div>
+                <div class="panel-body">
+                    <label for="output-srt" class="sr-only-label">병합된 자막 결과</label>
+                    <textarea id="output-srt" rows="15" class="app-textarea" readonly placeholder="병합된 자막 결과가 여기 표시됩니다"></textarea>
+                    <div id="textarea-line-count" class="line-count"></div>
+                    <div id="result-actions" class="result-actions">
+                        <button id="copy-btn" class="secondary-btn wide-btn">결과 복사</button>
+                    </div>
+                    <div id="download-links" class="download-links"></div>
+                </div>
+            </article>
+        </section>
+
+        <section id="options-section" class="content-section panel-section">
+            <article id="basic-options-article" class="panel-card option-card option-group1">
+                <div class="panel-header">
+                    <h2 class="panel-title">기본 병합 옵션</h2>
+                    <p class="panel-subtitle">핵심 병합 조건을 세밀하게 조정하세요.</p>
+                </div>
+                <div class="panel-body option-list">
+                    <label class="option-line">
+                        <input type="checkbox" id="enable-basic-merge" checked>
+                        기본 병합 기능 활성화
+                    </label>
+                    <label class="option-line">
+                        병합할 자막 개수
+                        <input type="number" id="max-merge-count" value="3" min="2">
+                    </label>
+                    <label class="option-line">
+                        최대 병합 문자열 길이
+                        <input type="number" id="max-text-length" value="45" min="10">
+                    </label>
+                    <label class="option-line" title="병합 시 각 자막의 최소 문자 수를 설정합니다. 이 조건을 활성화하면 설정한 문자 수 이상의 자막은 병합되지 않습니다.">
+                        <input type="checkbox" id="enable-min-length-merge">
+                        최소 문자 수
+                        <input type="number" id="min-text-length" value="5" min="1">
+                    </label>
+                    <label class="option-line">
+                        기본 병합 시간 간격 (밀리초)
+                        <input type="number" id="max-basic-gap" value="500" min="0">
+                    </label>
+                    <label class="option-line">
+                        <input type="checkbox" id="enable-space-merge">
+                        병합 시 띄어쓰기 추가
+                    </label>
+                </div>
+            </article>
+
+            <article id="advanced-options-article" class="panel-card option-card option-group2">
+                <div class="panel-header">
+                    <h2 class="panel-title">고급 병합 옵션</h2>
+                    <p class="panel-subtitle">중복 처리와 구간 병합에 필요한 설정입니다.</p>
+                </div>
+                <div class="panel-body option-list">
+                    <label class="option-line">
+                        <input type="checkbox" id="enable-duplicate-merge">
+                        중복 자막 병합 (내용 &amp; 싱크 동일)
+                    </label>
+                    <label class="option-line">
+                        중복 병합 시간 간격 (밀리초)
+                        <input type="number" id="max-duplicate-gap" value="0" min="0">
+                    </label>
+                    <label class="option-line">
+                        <input type="checkbox" id="enable-end-start-merge">
+                        앞/뒤 자막 연결 병합
+                    </label>
+                    <label class="option-line">
+                        앞/뒤 병합 시간 간격 (밀리초)
+                        <input type="number" id="max-end-start-gap" value="0" min="0">
+                    </label>
+                </div>
+            </article>
+
+            <article id="duration-options-article" class="panel-card option-card option-group3">
+                <div class="panel-header">
+                    <h2 class="panel-title">자막 길이 필터</h2>
+                    <p class="panel-subtitle">짧게 지나가는 자막을 손쉽게 제거하세요.</p>
+                </div>
+                <div class="panel-body option-list">
+                    <label class="option-line" title="지정한 시간(ms)보다 짧은 자막을 제거합니다. 짧게 지나가는 자막을 제거할 때 유용합니다.">
+                        <input type="checkbox" id="enable-min-duration-remove">
+                        최소 자막 길이 제거
+                        <input type="number" id="min-duration-ms" value="300" min="1"> ms
+                    </label>
+                </div>
+            </article>
+
+            <article id="analyzer-options-article" class="panel-card option-card option-group4">
+                <div class="panel-header">
+                    <h2 class="panel-title">형태소 분석 옵션</h2>
+                    <p class="panel-subtitle">완성된 문장을 유지하고 싶은 경우 사용하세요.</p>
+                </div>
+                <div class="panel-body option-list">
+                    <label class="option-line">
+                        <input type="checkbox" id="enable-segment-analyzer">
+                        형태소 분석 점수 제한 적용
+                    </label>
+                    <label class="option-line">
+                        형태소 점수 임계값 (0~1)
+                        <input type="number" id="segment-analyzer-threshold" value="0.7" min="0" max="1" step="0.05">
+                    </label>
+                    <label class="option-line" for="segment-analyzer-language">
+                        형태소 분석 언어 선택
+                        <select id="segment-analyzer-language" class="analyzer-select-control">
+                            <option value="en">영어 (English)</option>
+                            <option value="ja">일본어 (日本語)</option>
+                        </select>
+                    </label>
+                    <div id="analyzer-help" class="line-count">
+                        점수가 낮은 문장만 병합하여 완성된 문장을 유지합니다.
+                    </div>
+                </div>
+            </article>
+        </section>
+
     </div>
+</main>
 
-    <!-- 기존의 textarea 입력 기능 유지 -->
-    <label for="input-srt">SRT 자막 입력:</label>
-    <textarea id="input-srt" rows="15" placeholder="여기에 SRT 자막을 입력하세요"></textarea>
-
-    <div class="option-group option-group1">
-        <label>
-            <input type="checkbox" id="enable-basic-merge" checked>
-            기본 병합 기능 활성화
-        </label>
-        <label>
-            병합할 자막 개수:
-            <input type="number" id="max-merge-count" value="3" min="2">
-        </label>
-        <label>
-            최대 병합 문자열 길이:
-            <input type="number" id="max-text-length" value="45" min="10">
-        </label>
-        <!-- 신규 옵션: 병합 시 각 텍스트의 최소 길이 조건 추가 -->
-        <label title="병합 시 각 자막의 최소 문자 수를 설정합니다. 이 조건을 활성화하면 설정한 문자 수 이상의 자막은 병합되지 않습니다.">
-            <input type="checkbox" id="enable-min-length-merge">
-            최소 문자 수: <input type="number" id="min-text-length" value="5" min="1">
-        </label>
-        <!-- 기본 병합 시간 간격 입력 필드 추가 -->
-        <label>
-            기본 병합 시간 간격 (밀리초):
-            <input type="number" id="max-basic-gap" value="500" min="0">
-        </label>
-        <label>
-            <input type="checkbox" id="enable-space-merge">
-            병합 시 띄어쓰기 추가
-        </label>
+<footer id="app-footer" class="layout-footer">
+    <div id="footer-wrapper" class="footer-wrapper">
+        <p id="footer-text" class="footer-text">© 2025 Subtitle Merger</p>
     </div>
-    <hr>
-    <div class="option-group option-group2">
-        <label>
-            <input type="checkbox" id="enable-duplicate-merge">
-            중복 자막 병합 활성화 (내용 & 싱크 동일, 시간 간격 기준)
-        </label>
-        <label>
-            시간 간격 (밀리초):
-            <input type="number" id="max-duplicate-gap" value="0" min="0">
-        </label>
-        <label>
-            <input type="checkbox" id="enable-end-start-merge">
-            앞/뒤 자막 병합 활성화 (내용 연결, 시간 간격 기준)
-        </label>
-        <label>
-            시간 간격 (밀리초):
-            <input type="number" id="max-end-start-gap" value="0" min="0">
-        </label>
-    </div>
-    <hr>
-    <div class="option-group option-group3">
-        <!-- 최소 자막 길이 제거 옵션 추가 -->
-        <label title="지정한 시간(ms)보다 짧은 자막을 제거합니다. 짧게 지나가는 자막을 제거할 때 유용합니다.">
-            <input type="checkbox" id="enable-min-duration-remove">
-            최소 자막 길이 제거: <input type="number" id="min-duration-ms" value="300" min="1"> ms
-        </label>
-    </div>
+</footer>
 
-    <button id="process-btn">자막 병합</button>
-    <button id="copy-btn">결과 복사</button>
-
-    <!-- 결과 출력 영역 -->
-    <label for="output-srt">병합된 자막 결과:</label>
-    <textarea id="output-srt" rows="15" readonly placeholder="병합된 자막 결과가 여기 표시됩니다"></textarea>
-    <!-- 라인 수 표시 요소 추가 -->
-    <div id="textarea-line-count" class="line-count"></div>
-
-    <!-- 결과 다운로드 리스트 -->
-    <div id="download-links"></div>
-</div>
-
-<!-- 별도의 스크립트 파일로 분리 -->
-<script src="script.js"></script>
+<script src="{{ url_for('static', filename='script.js') }}"></script>
 
 </body>
 </html>
