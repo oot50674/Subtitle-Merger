@@ -34,10 +34,7 @@ $(document).ready(function() {
         $('#max-end-start-gap').val(options.maxEndStartGap);
         // similarityThreshold option removed
         $('#min-duration-ms').val(options.minDurationMs || 300);
-        var cachedThreshold = typeof options.segmentAnalyzerThreshold === 'number'
-            ? options.segmentAnalyzerThreshold
-            : 0.7;
-        $('#segment-analyzer-threshold').val(cachedThreshold);
+        $('#candidate-chunk-size').val(options.candidateChunkSize || 3);
         var cachedLanguage = options.segmentAnalyzerLanguage;
         if (typeof cachedLanguage !== 'string') {
             cachedLanguage = defaultAnalyzerLanguage;
@@ -49,6 +46,7 @@ $(document).ready(function() {
         }
         $('#segment-analyzer-language').val(cachedLanguage);
     } else {
+        $('#candidate-chunk-size').val(3);
         $('#segment-analyzer-language').val(defaultAnalyzerLanguage);
     }
 
@@ -77,8 +75,8 @@ $(document).ready(function() {
 
     $('#enable-segment-analyzer').change(function() {
         var disabled = !$(this).is(':checked');
-        $('#segment-analyzer-threshold').prop('disabled', disabled);
         $('#segment-analyzer-language').prop('disabled', disabled);
+        $('#candidate-chunk-size').prop('disabled', disabled);
     });
     
     // 초기 상태 설정 트리거
@@ -93,11 +91,6 @@ $(document).ready(function() {
     $('#process-btn').click(function() {
         var files = $('#srt-files')[0].files;
         // 자막 병합 옵션 설정
-        var analyzerThreshold = parseFloat($('#segment-analyzer-threshold').val());
-        if (isNaN(analyzerThreshold)) {
-            analyzerThreshold = 0.9;
-        }
-
         var analyzerLanguage = $('#segment-analyzer-language').val();
         if (typeof analyzerLanguage !== 'string') {
             analyzerLanguage = defaultAnalyzerLanguage;
@@ -118,13 +111,13 @@ $(document).ready(function() {
             enableSegmentAnalyzer: $('#enable-segment-analyzer').is(':checked'),
             minTextLength: parseInt($('#min-text-length').val()) || 1,      // 병합 시 각 자막의 최소 문자 수
             maxMergeCount: parseInt($('#max-merge-count').val()) || 2,      // 병합할 최대 자막 개수
+            candidateChunkSize: parseInt($('#candidate-chunk-size').val()) || 3, // 비교할 자막 청크 크기
             maxTextLength: parseInt($('#max-text-length').val()) || 50,     // 최대 병합 문자열 길이
             maxBasicGap: parseInt($('#max-basic-gap').val()) || 500,        // 기본 병합 시간 간격 (밀리초)
             maxDuplicateGap: parseInt($('#max-duplicate-gap').val()) || 300, // 중복 병합 시간 간격 (밀리초)
             maxEndStartGap: parseInt($('#max-end-start-gap').val()) || 300,   // 앞뒤 자막 병합 시간 간격 (밀리초)
             // similarityThreshold removed
             minDurationMs: parseInt($('#min-duration-ms').val()) || 300,
-            segmentAnalyzerThreshold: analyzerThreshold,
             segmentAnalyzerLanguage: analyzerLanguage.toLowerCase()
         };
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple, TypedDict
 
@@ -166,116 +165,195 @@ def merge_end_start_entries(
     return merged_entries
 
 
+def _join_segment_text(current_text: str, next_text: str, enable_space_merge: bool) -> str:
+    """개별 자막 텍스트를 병합할 때 사용되는 joiner."""
+    left = current_text.strip()
+    right = next_text.strip()
+    if not left:
+        return right
+    if not right:
+        return left
+    separator = ' ' if enable_space_merge else ''
+    return left + separator + right
+
+
+def _safe_analyze_segment(
+    text: str,
+    language: str,
+    enable_analyzer: bool,
+):
+    """형태소 분석 사용 여부에 따라 안전하게 분석을 수행합니다."""
+    if not enable_analyzer:
+        return None
+    try:
+        return analyze_segment(text, language=language)
+    except Exception as exc:  # pragma: no cover - 방어적 코드
+        logging.error("형태소 분석 중 오류: %s", exc)
+        return None
+
+
+def _compute_candidate_score(analysis) -> float:
+    """completeness와 break_naturalness를 가중합으로 계산."""
+    if analysis is None:
+        return 0.0
+    weighted = 0.7 * analysis.completeness_score + 0.3 * analysis.break_naturalness
+    return round(weighted, 4)
+
+
+def _can_extend_merge(
+    current_text: str,
+    next_entry: SubtitleEntry,
+    current_end_time: str,
+    options: Dict[str, Any],
+) -> bool:
+    """시간/길이 옵션을 만족하는지 확인."""
+    max_basic_gap = options.get('maxBasicGap', 500)
+    enable_min_length_merge = options.get('enableMinLengthMerge', False)
+    min_text_length = options.get('minTextLength', 1)
+
+    current_end_ms = time_to_ms(current_end_time)
+    next_start_ms = time_to_ms(next_entry['start_time'])
+    if next_start_ms - current_end_ms > max_basic_gap:
+        return False
+
+    if enable_min_length_merge:
+        current_len = len(current_text.replace(' ', ''))
+        next_len = len(next_entry['text'].strip().replace(' ', ''))
+        if current_len >= min_text_length or next_len >= min_text_length:
+            return False
+
+    return True
+
+
 def merge_basic_entries(entries: List[SubtitleEntry], options: Dict[str, Any]) -> List[SubtitleEntry]:
-    """기본 병합 로직: 시간 간격, 길이 조건에 따라 다수 자막 병합."""
+    """새 파이프라인 기반 기본 병합: 슬라이딩 창 후보 생성 → 점수 계산 → 최적 선택."""
     processed_entries: List[SubtitleEntry] = []
     idx = 0
 
+    raw_candidate_chunk = options.get('candidateChunkSize', 3)
+    try:
+        candidate_chunk_size = int(raw_candidate_chunk)
+    except (TypeError, ValueError):
+        candidate_chunk_size = 3
+    candidate_chunk_size = max(1, candidate_chunk_size)
+
     max_merge_count = options.get('maxMergeCount', 2)
     max_text_length = options.get('maxTextLength', 50)
-    max_basic_gap = options.get('maxBasicGap', 500)
-    enable_basic_merge = options.get('enableBasicMerge', False)
     enable_space_merge = options.get('enableSpaceMerge', False)
-    enable_min_length_merge = options.get('enableMinLengthMerge', False)
-    min_text_length = options.get('minTextLength', 1)
     enable_segment_analyzer = options.get('enableSegmentAnalyzer', False)
-    raw_threshold = options.get('segmentAnalyzerThreshold', 0.9)
-    try:
-        analyzer_threshold = float(raw_threshold)
-    except (TypeError, ValueError):
-        analyzer_threshold = 0.9
-    analyzer_threshold = max(0.0, min(1.0, analyzer_threshold))
     analyzer_language = str(options.get('segmentAnalyzerLanguage', 'en') or 'en').lower()
 
     logging.info(
-        "병합 옵션: max_merge_count=%s, max_text_length=%s, max_basic_gap=%s",
+        "병합 옵션: max_merge_count=%s, candidate_chunk_size=%s, max_text_length=%s, max_basic_gap=%s, min_text_length=%s",
         max_merge_count,
+        candidate_chunk_size,
         max_text_length,
-        max_basic_gap,
+        options.get('maxBasicGap', 500),
+        options.get('minTextLength', 1),
     )
     logging.info(
-        "옵션 활성화 상태: basic_merge=%s, space_merge=%s, min_length_merge=%s, min_text_length=%s",
-        enable_basic_merge,
+        "옵션 활성화 상태: basic_merge=%s, space_merge=%s, min_length_merge=%s, segment_analyzer=%s",
+        options.get('enableBasicMerge', False),
         enable_space_merge,
-        enable_min_length_merge,
-        min_text_length,
+        options.get('enableMinLengthMerge', False),
+        enable_segment_analyzer,
     )
 
     while idx < len(entries):
-        merged_entry = entries[idx].copy()
-        merge_count = 1
+        window_end = min(len(entries), idx + candidate_chunk_size)
+        window_candidates: List[Dict[str, Any]] = []
 
-        while True:
-            if idx + merge_count >= len(entries) or merge_count >= max_merge_count:
-                break
+        for start_idx in range(idx, window_end):
+            start_entry = entries[start_idx]
+            current_text = start_entry['text'].strip()
+            current_end_time = start_entry['end_time']
+            merge_count = 1
+            current_analysis = _safe_analyze_segment(current_text, analyzer_language, enable_segment_analyzer)
 
-            next_entry = entries[idx + merge_count]
-            current_text = merged_entry['text'].strip()
-            next_text = next_entry['text'].strip()
-            combined_text = current_text + (' ' if enable_space_merge else '') + next_text
+            while True:
+                score = _compute_candidate_score(current_analysis)
+                is_complete = bool(current_analysis.is_complete_sentence) if current_analysis else False
 
-            if enable_segment_analyzer:
-                if current_text.endswith('.'):
-                    logging.info("형태소 분석 옵션 활성화 시 마침표 종료 문장 병합 중단")
-                    break
-                try:
-                    analysis = analyze_segment(current_text, language=analyzer_language)
-                    if analysis.completeness_score > analyzer_threshold:
-                        logging.info(
-                            "형태소 분석 점수 초과로 병합 중단: score=%.3f, threshold=%.3f",
-                            analysis.completeness_score,
-                            analyzer_threshold,
-                        )
-                        break
-                except Exception as exc:  # pragma: no cover - 방어적 코드
-                    logging.error("형태소 분석 중 오류: %s", exc)
-                    break
-
-            if len(combined_text) > max_text_length:
-                logging.info("최대 길이 초과로 병합 중단: %s > %s", len(combined_text), max_text_length)
-                break
-
-            if re.search(r'[.,?!;:]', next_entry['text']):
-                merged_entry['end_time'] = next_entry['end_time']
-                merged_entry['text'] = combined_text
-                merge_count += 1
-                break
-
-            if not enable_basic_merge:
-                break
-
-            current_end_ms = time_to_ms(merged_entry['end_time'])
-            next_start_ms = time_to_ms(next_entry['start_time'])
-            time_gap = next_start_ms - current_end_ms
-
-            min_length_condition = True
-            if enable_min_length_merge:
-                current_len = len(current_text.replace(' ', ''))
-                next_len = len(next_text.replace(' ', ''))
-                if current_len >= min_text_length or next_len >= min_text_length:
-                    min_length_condition = False
-                    logging.debug(
-                        "최소 문자 수 조건으로 병합하지 않음: %s, %s >= %s",
-                        current_len,
-                        next_len,
-                        min_text_length,
-                    )
-
-            if min_length_condition and time_gap <= max_basic_gap:
-                merged_entry['end_time'] = next_entry['end_time']
-                merged_entry['text'] = combined_text
-                merge_count += 1
-            else:
-                logging.info(
-                    "병합 조건 불만족: min=%s, gap=%s, combined_length=%s",
-                    min_length_condition,
-                    time_gap <= max_basic_gap,
-                    len(combined_text),
+                candidate_entry = {
+                    'start_time': start_entry['start_time'],
+                    'end_time': current_end_time,
+                    'text': current_text,
+                }
+                window_candidates.append(
+                    {
+                        'entry': candidate_entry,
+                        'merge_count': merge_count,
+                        'analysis': current_analysis,
+                        'score': score,
+                        'is_complete': is_complete,
+                        'start_idx': start_idx,
+                    }
                 )
-                break
 
-        processed_entries.append(merged_entry)
-        idx += merge_count
+                if (
+                    merge_count >= max_merge_count
+                    or merge_count >= candidate_chunk_size
+                    or start_idx + merge_count >= window_end
+                ):
+                    break
+
+                next_entry = entries[start_idx + merge_count]
+                if not _can_extend_merge(current_text, next_entry, current_end_time, options):
+                    break
+
+                combined_text = _join_segment_text(current_text, next_entry['text'], enable_space_merge)
+                if len(combined_text) > max_text_length:
+                    break
+
+                current_text = combined_text
+                current_end_time = next_entry['end_time']
+                merge_count += 1
+                current_analysis = _safe_analyze_segment(current_text, analyzer_language, enable_segment_analyzer)
+
+        if not window_candidates:
+            processed_entries.append(entries[idx].copy())
+            idx += 1
+            continue
+
+        formatted_candidates: List[str] = []
+        for cand in window_candidates:
+            cand_text = cand['entry']['text'].strip()
+            if len(cand_text) > 40:
+                cand_text = cand_text[:37] + "..."
+            formatted_candidates.append(
+                "start=%s|merge=%s|score=%.3f|complete=%s|text=%s"
+                % (
+                    cand['start_idx'] + 1,
+                    cand['merge_count'],
+                    cand['score'],
+                    "Y" if cand['is_complete'] else "N",
+                    cand_text,
+                )
+            )
+        logging.info(
+            "후보군 생성: window=%s-%s count=%s [%s]",
+            idx + 1,
+            window_end,
+            len(window_candidates),
+            "; ".join(formatted_candidates),
+        )
+
+        best_candidate = max(
+            window_candidates,
+            key=lambda cand: (
+                cand['score'],
+                cand['analysis'].break_naturalness if cand['analysis'] else 0.0,
+                cand['merge_count'],
+            ),
+        )
+
+        # 창 내에서 최고 후보보다 앞에 있는 엔트리는 단독으로 먼저 확정
+        if best_candidate['start_idx'] > idx:
+            for fill_idx in range(idx, best_candidate['start_idx']):
+                processed_entries.append(entries[fill_idx].copy())
+
+        processed_entries.append(best_candidate['entry'])
+        idx = best_candidate['start_idx'] + best_candidate['merge_count']
 
     return processed_entries
 

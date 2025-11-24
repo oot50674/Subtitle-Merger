@@ -438,11 +438,8 @@ def analyze_segment(text: str, language: str = DEFAULT_LANGUAGE) -> SegmentAnaly
     config = LANGUAGE_CONFIGS[normalized_language]
     doc = _get_nlp(normalized_language)(stripped)
     tokens = [t.text for t in doc if not t.is_space]
-    normalized_text = _normalize_text(stripped, config)
-
-    reasons: List[str] = []
-
-    if not tokens:
+    content_tokens = [t for t in doc if not t.is_space and not t.is_punct]
+    if not content_tokens:
         return SegmentAnalysis(
             text=text,
             language=normalized_language,
@@ -453,10 +450,13 @@ def analyze_segment(text: str, language: str = DEFAULT_LANGUAGE) -> SegmentAnaly
             ok_as_segment=False,
             reasons=["empty"],
         )
+    normalized_text = _normalize_text(stripped, config)
 
-    length = len(tokens)
-    last_token = doc[-1]
-    first_token = doc[0]
+    reasons: List[str] = []
+
+    length = len(content_tokens)
+    last_token = content_tokens[-1]
+    first_token = content_tokens[0]
 
     has_finite_verb = _has_finite_verb(doc, normalized_language)
     has_subject = _has_subject(doc, normalized_language)
@@ -474,12 +474,23 @@ def analyze_segment(text: str, language: str = DEFAULT_LANGUAGE) -> SegmentAnaly
         reasons.append("subject_or_imperative")
 
     normalized_last = _normalize_text(last_token.text, config)
-    if last_token.text in config.sent_end_punct:
-        score += 0.1
-        reasons.append("sentence_punctuation")
-
     if length >= 4:
         score += 0.1
+
+    # 구두점으로 끝날 때 완전성 가중치 추가 (언어별 종결부호 고려)
+    if normalized_language in ("en", "ja", "ko"):
+        for token in reversed(doc):
+            if token.is_space:
+                continue
+            if token.is_punct:
+                token_text = token.text.strip()
+                if token_text in {".", "!", "?", "。", "！", "？"}:
+                    score += 0.1
+                    reasons.append("punct_bonus_end")
+                elif token_text in {",", "，", "、"}:
+                    score += 0.05
+                    reasons.append("comma_bonus_end")
+            break
 
     if any(t.dep_ == "ROOT" and t.pos_ in {"VERB", "AUX"} for t in doc):
         score += 0.1

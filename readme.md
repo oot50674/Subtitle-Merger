@@ -115,15 +115,22 @@ curl -X POST http://localhost:2121/process_text ^
 ## 병합 옵션 요약
 | 옵션 키 | 설명 |
 | --- | --- |
-| `enableBasicMerge`, `maxMergeCount`, `maxTextLength`, `maxBasicGap` | 기본 병합 활성화 및 최대 묶음/문자/간격 제한 |
+| `enableBasicMerge`, `maxMergeCount`, `maxTextLength`, `maxBasicGap` | 기본 병합 활성화, 최대 병합 개수/글자 수/간격 제한 |
+| `candidateChunkSize` | 한 기준 위치에서 비교할 연속 자막 청크 크기(기본 3, 형태소 분석 옵션 그룹에 표시) |
 | `enableSpaceMerge` | 문장 사이에 공백을 넣어 자연스러운 연결 |
 | `enableMinLengthMerge`, `minTextLength` | 병합 대상 최소 글자 수 조건 |
 | `enableDuplicateMerge`, `maxDuplicateGap` | 동일 문구가 짧은 간격으로 반복될 때 병합 |
 | `enableEndStartMerge`, `maxEndStartGap` | 이전 자막 끝 단어와 다음 자막 시작 단어가 같을 때 병합 |
 | `enableMinDurationRemove`, `minDurationMs` | 표시 시간이 짧은 자막 제거 |
+| `enableSegmentAnalyzer`, `segmentAnalyzerLanguage` | 형태소·구문 기반 완전성/끊김 점수 계산(구두점 무시), 사용 언어(en/ja/ko) |
 | `startTime`, `endTime` | 특정 구간만 처리하고 싶을 때 사용(POST 폼 파라미터) |
 
 모든 옵션은 `static/script.js`에서 JSON으로 직렬화되어 서버에 전송되며, 서버 측에서는 `process_srt()` 파이프라인을 통해 순차적으로 적용합니다.
+
+### 병합 파이프라인 상세
+- 후보 생성(Candidate Generator): 구간별로 S1, S1+S2, S1+S2+S3 …를 `maxMergeCount`, `candidateChunkSize`, `maxTextLength`, `maxBasicGap`, `minTextLength` 조건을 만족하는 한도에서 모두 생성합니다.
+- 스코어링(Scoring Engine): 형태소·구문 분석 점수(문장 완전성 70% + 끊김 자연도 30%)로 후보를 평가합니다. 구두점(., !, ?, …)은 점수에 영향이 없습니다.
+- 최적 선택(Best Candidate): 생성된 후보 중 점수가 가장 높은 1개를 선택하고, 포함된 엔트리 개수만큼 인덱스를 건너뜁니다.
 
 ## 로그·문제해결
 - 기본 로그는 STDOUT과 `app.log`에 INFO 레벨로 기록됩니다. 필요 시 `logging.basicConfig`를 수정해 로그 파일 경로/레벨을 조정하세요.
