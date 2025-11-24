@@ -85,7 +85,6 @@ docker run --rm -p 2121:2121 -e PORT=2121 subtitle-merger
 ```bash
 docker compose up --build
 ```
-- 코드 변경을 즉시 반영하려면 기본 설정(`.:/app`) 덕분에 재시작 없이 핫리로드됩니다.
 
 ## 웹 UI 사용법
 1. 브라우저에서 `http://localhost:2121` 접속
@@ -122,7 +121,7 @@ curl -X POST http://localhost:2121/process_text ^
 | `enableDuplicateMerge`, `maxDuplicateGap` | 동일 문구가 짧은 간격으로 반복될 때 병합 |
 | `enableEndStartMerge`, `maxEndStartGap` | 이전 자막 끝 단어와 다음 자막 시작 단어가 같을 때 병합 |
 | `enableMinDurationRemove`, `minDurationMs` | 표시 시간이 짧은 자막 제거 |
-| `enableSegmentAnalyzer`, `segmentAnalyzerLanguage` | 형태소·구문 기반 완전성/끊김 점수 계산(구두점 무시), 사용 언어(en/ja/ko) |
+| `enableSegmentAnalyzer`, `segmentAnalyzerLanguage` | 형태소·구문 기반 완전성 점수 계산, 사용 언어(en/ja/ko) |
 | `startTime`, `endTime` | 특정 구간만 처리하고 싶을 때 사용(POST 폼 파라미터) |
 
 모든 옵션은 `static/script.js`에서 JSON으로 직렬화되어 서버에 전송되며, 서버 측에서는 `process_srt()` 파이프라인을 통해 순차적으로 적용합니다.
@@ -131,9 +130,3 @@ curl -X POST http://localhost:2121/process_text ^
 - 후보 생성(Candidate Generator): 구간별로 S1, S1+S2, S1+S2+S3 …를 `maxMergeCount`, `candidateChunkSize`, `maxTextLength`, `maxBasicGap`, `minTextLength` 조건을 만족하는 한도에서 모두 생성합니다.
 - 스코어링(Scoring Engine): 형태소·구문 분석 점수(문장 완전성 70% + 끊김 자연도 30%)로 후보를 평가합니다. 구두점(., !, ?, …)은 점수에 영향이 없습니다.
 - 최적 선택(Best Candidate): 생성된 후보 중 점수가 가장 높은 1개를 선택하고, 포함된 엔트리 개수만큼 인덱스를 건너뜁니다.
-
-## 로그·문제해결
-- 기본 로그는 STDOUT과 `app.log`에 INFO 레벨로 기록됩니다. 필요 시 `logging.basicConfig`를 수정해 로그 파일 경로/레벨을 조정하세요.
-- 업로드 오류 시 4xx/5xx JSON 응답으로 메시지가 반환되며, 브라우저 alert로 노출됩니다.
-- 대용량 파일을 다룰 때는 Flask의 `MAX_CONTENT_LENGTH`나 리버스 프록시 설정을 조정해 주세요.
-- ZIP 다운로드가 동작하지 않을 경우, 브라우저 콘솔에서 JSZip/FileSaver 로드 여부를 확인합니다.
