@@ -179,11 +179,11 @@ def merge_basic_entries(entries: List[SubtitleEntry], options: Dict[str, Any]) -
     enable_min_length_merge = options.get('enableMinLengthMerge', False)
     min_text_length = options.get('minTextLength', 1)
     enable_segment_analyzer = options.get('enableSegmentAnalyzer', False)
-    raw_threshold = options.get('segmentAnalyzerThreshold', 0.7)
+    raw_threshold = options.get('segmentAnalyzerThreshold', 0.9)
     try:
         analyzer_threshold = float(raw_threshold)
     except (TypeError, ValueError):
-        analyzer_threshold = 0.7
+        analyzer_threshold = 0.9
     analyzer_threshold = max(0.0, min(1.0, analyzer_threshold))
     analyzer_language = str(options.get('segmentAnalyzerLanguage', 'en') or 'en').lower()
 

@@ -1,14 +1,20 @@
 #!/usr/bin/env python
 """
-Multilingual segment analyzer (English / Japanese)
+Multilingual segment analyzer (English / Japanese / Korean)
 
 - 텍스트 조각이 완전한 문장인지 평가하고, 끊어 읽었을 때의 자연스러움도 함께 계산합니다.
-- 현재는 영어(en)와 일본어(ja)를 지원합니다.
+- 현재는 영어(en), 일본어(ja), 한국어(ko)를 지원합니다.
+ - 한국어는 spaCy+Stanza(ko) 파이프라인을 사용하고,
+   실패 시 간단한 규칙 기반 분석으로 대체합니다.
 
 필요:
   pip install spacy
   python -m spacy download en_core_web_sm
   python -m spacy download ja_core_news_sm
+
+  한국어:
+    pip install stanza spacy-stanza
+    python -m stanza.download ko
 """
 
 from __future__ import annotations
@@ -18,11 +24,59 @@ import json
 import logging
 from dataclasses import dataclass, asdict
 from functools import lru_cache
-from typing import Dict, Iterable, List, Set
+from typing import Dict, Iterable, List, Set, Tuple
 
 import spacy
+try:
+    import spacy_stanza
+except ImportError:  # spacy-stanza가 없을 수도 있으니 옵션 처리
+    spacy_stanza = None
+
+# PyTorch 2.6 weights_only 기본값으로 인한 stanza 로딩 실패 방지용 안전 등록
+try:
+    import numpy as _np
+    from torch.serialization import add_safe_globals
+
+    add_safe_globals([_np.core.multiarray._reconstruct])
+except Exception:
+    pass
 
 logger = logging.getLogger(__name__)
+
+
+def _load_stanza_ko_pipeline():
+    """
+    spaCy-Stanza ko 파이프라인을 로드합니다.
+    - PyTorch 2.6부터 weights_only 기본값이 True로 바뀌어 stanza 로딩이 막히므로
+      내부적으로 torch.load의 기본 weights_only를 False로 강제합니다.
+    """
+    if spacy_stanza is None:
+        return None
+
+    torch_module = None
+    original_torch_load = None
+    try:
+        import torch as _torch
+
+        torch_module = _torch
+        original_torch_load = _torch.load
+
+        def _patched_torch_load(*args, **kwargs):
+            if "weights_only" not in kwargs:
+                kwargs["weights_only"] = False
+            return original_torch_load(*args, **kwargs)
+
+        _torch.load = _patched_torch_load
+    except Exception:
+        # torch가 없거나 패치에 실패하면 그대로 진행
+        pass
+
+    try:
+        logger.info("spaCy-Stanza 한국어 파이프라인을 사용합니다.")
+        return spacy_stanza.load_pipeline("ko")
+    finally:
+        if torch_module is not None and original_torch_load is not None:
+            torch_module.load = original_torch_load
 
 
 @dataclass(frozen=True)
@@ -34,6 +88,7 @@ class LanguageConfig:
     short_ok_sentences: Set[str]
     bad_end_words: Set[str]
     case_sensitive: bool = False
+    blank_fallbacks: Tuple[str, ...] = ()
 
 
 LANGUAGE_CONFIGS: Dict[str, LanguageConfig] = {
@@ -52,6 +107,7 @@ LANGUAGE_CONFIGS: Dict[str, LanguageConfig] = {
             "sure",
         },
         bad_end_words={"to", "of", "in", "at", "for", "on", "with"},
+        blank_fallbacks=("en",),
     ),
     "ja": LanguageConfig(
         model_name="ja_core_news_sm",
@@ -61,6 +117,17 @@ LANGUAGE_CONFIGS: Dict[str, LanguageConfig] = {
         short_ok_sentences={"はい", "いいえ", "了解", "了解です", "ありがとう", "ありがとうございます", "どうも", "うん"},
         bad_end_words={"は", "が", "を", "に", "へ", "で", "と", "から", "まで", "より", "や", "の", "ね", "よ", "か", "も", "って"},
         case_sensitive=True,
+        blank_fallbacks=("ja", "xx"),
+    ),
+    "ko": LanguageConfig(
+        model_name="ko_core_news_sm",
+        sent_end_punct={".", "!", "?", "！", "？"},
+        bad_end_pos={"ADP", "SCONJ", "PART"},
+        bad_start_pos={"CCONJ", "SCONJ", "ADV"},
+        short_ok_sentences={"네", "예", "아니요", "응", "웅", "그래", "좋아", "고마워", "감사합니다", "괜찮아요", "괜찮아"},
+        bad_end_words={"은", "는", "이", "가", "을", "를", "에", "에서", "께", "한테", "에게", "까지", "부터", "으로", "로", "와", "과", "랑", "하고", "도", "만", "같이", "처럼", "보다", "조차", "마저", "이나", "나", "요", "죠", "지"},
+        case_sensitive=True,
+        blank_fallbacks=("ko", "xx"),
     ),
 }
 
@@ -71,7 +138,62 @@ DEFAULT_LANGUAGE = "en"
 def _load_model(language: str):
     """spaCy 모델을 lazy하게 로드합니다."""
     config = LANGUAGE_CONFIGS[language]
-    return spacy.load(config.model_name)
+
+    # 한국어는 spacy-stanza 파이프라인만 사용
+    if language == "ko":
+        if spacy_stanza is not None:
+            try:
+                loaded = _load_stanza_ko_pipeline()
+                if loaded is not None:
+                    return loaded
+            except Exception as exc:  # pragma: no cover
+                logger.warning(
+                    "spaCy-Stanza 한국어 파이프라인 로드 실패: %s",
+                    exc,
+                )
+        else:
+            logger.warning("spaCy-Stanza가 설치되어 있지 않아 한국어 모델을 사용할 수 없습니다.")
+
+        logger.warning(
+            "한국어에 대해 blank spaCy 모델로 대체합니다.",
+        )
+        for blank_code in config.blank_fallbacks:
+            try:
+                return spacy.blank(blank_code)
+            except Exception:
+                continue
+        raise RuntimeError("언어 %s에 대한 NLP 파이프라인 로딩에 실패했습니다." % language)
+
+    try:
+        return spacy.load(config.model_name)
+    except Exception as exc:  # pragma: no cover - 방어적 코드
+        logger.warning(
+            "spaCy 모델 로드 실패(%s): %s.",
+            language,
+            exc,
+        )
+
+    if language == "ko" and spacy_stanza is not None:
+        try:
+            loaded = _load_stanza_ko_pipeline()
+            if loaded is not None:
+                return loaded
+        except Exception as exc:  # pragma: no cover
+            logger.warning(
+                "spaCy-Stanza 한국어 파이프라인 로드 실패: %s",
+                exc,
+            )
+
+    logger.warning(
+        "언어 %s 에 대해 blank spaCy 모델로 대체합니다.",
+        language,
+    )
+    for blank_code in config.blank_fallbacks:
+        try:
+            return spacy.blank(blank_code)
+        except Exception:
+            continue
+    raise RuntimeError("언어 %s에 대한 NLP 파이프라인 로딩에 실패했습니다." % language)
 
 
 def _get_nlp(language: str):
@@ -86,6 +208,67 @@ def _normalize_language(language: str) -> str:
         logger.warning("지원하지 않는 형태소 분석 언어(%s)가 전달되어 영어로 대체합니다.", language)
         return DEFAULT_LANGUAGE
     return normalized
+
+
+def _contains_korean(text: str) -> bool:
+    """간단히 한글 여부를 확인."""
+    for char in text:
+        if "가" <= char <= "힣":
+            return True
+    return False
+
+
+def _ends_with_particle(text: str, particles: Set[str]) -> bool:
+    """조사/어미 같은 짧은 토큰으로 끝나는지 확인."""
+    stripped = text.strip()
+    if not stripped:
+        return False
+    for particle in particles:
+        if stripped.endswith(particle):
+            return True
+    return False
+
+
+def _looks_like_korean_verb(token_text: str) -> bool:
+    """동사/형용사 활용 어미로 추정되는지 간단히 검사."""
+    if not token_text or not _contains_korean(token_text):
+        return False
+    normalized = token_text.strip()
+    verb_endings = (
+        "다",
+        "요",
+        "니다",
+        "했다",
+        "된다",
+        "됐다",
+        "였다",
+        "한다",
+        "했다가",
+        "한다가",
+        "할게",
+        "할게요",
+        "할께",
+        "할께요",
+        "해라",
+        "하세요",
+        "하십시오",
+        "합시다",
+        "하자",
+        "해요",
+        "해",
+        "줘",
+        "줘요",
+        "줘라",
+        "봐",
+        "봐요",
+        "봐라",
+        "지",
+        "지요",
+        "지요?",
+        "겠어",
+        "겠습니다",
+    )
+    return normalized.endswith(verb_endings)
 
 
 @dataclass
@@ -104,6 +287,8 @@ def _has_finite_verb(doc: Iterable, language: str) -> bool:
     """시제/인칭이 있는 동사가 있는지 (대충 '문장 같다'의 핵심 조건)."""
     if language == "ja":
         return any(token.pos_ in {"VERB", "AUX"} for token in doc)
+    if language == "ko":
+        return any(_looks_like_korean_verb(token.text) for token in doc)
 
     for token in doc:
         if token.pos_ in {"VERB", "AUX"}:
@@ -124,6 +309,14 @@ def _has_subject(doc: Iterable, language: str) -> bool:
                 for child in token.children:
                     if child.pos_ in {"ADP", "PART"} and child.text in {"は", "が"}:
                         return True
+        return False
+    if language == "ko":
+        for token in doc:
+            token_text = token.text.strip()
+            if not token_text or not _contains_korean(token_text):
+                continue
+            if _ends_with_particle(token_text, {"은", "는", "이", "가", "께서", "께"}):
+                return True
         return False
 
     for token in doc:
@@ -165,7 +358,50 @@ def _looks_imperative_ja(doc) -> bool:
     return last_text.endswith(("て", "で", "なさい", "ください", "ろ", "よ"))
 
 
+def _looks_imperative_ko(doc) -> bool:
+    if not doc:
+        return False
+
+    last_text = doc[-1].text.strip()
+    if not last_text or not _contains_korean(last_text):
+        return False
+
+    imperative_endings = (
+        "해라",
+        "해봐",
+        "해봐요",
+        "해봐라",
+        "해보세요",
+        "해줘",
+        "해줘요",
+        "해줘라",
+        "하라",
+        "하세요",
+        "하십시오",
+        "합시다",
+        "하자",
+        "가라",
+        "와라",
+        "앉아",
+        "앉아요",
+        "봐라",
+        "봐요",
+        "들어라",
+        "들어요",
+        "하지마",
+        "하지 마",
+        "하지 마라",
+        "하지 마세요",
+        "말아",
+        "말아요",
+        "말아요?",
+    )
+    return last_text.endswith(imperative_endings)
+
+
 def _looks_imperative(doc, language: str) -> bool:
+    if language == "ko":
+        return _looks_imperative_ko(doc)
     if language == "ja":
         return _looks_imperative_ja(doc)
     return _looks_imperative_en(doc)
@@ -271,6 +507,9 @@ def analyze_segment(text: str, language: str = DEFAULT_LANGUAGE) -> SegmentAnaly
     if normalized_last in config.bad_end_words:
         awkward += 0.2
         reasons.append(f"bad_end_word:{normalized_last}")
+    elif normalized_language == "ko" and _ends_with_particle(last_token.text, config.bad_end_words):
+        awkward += 0.2
+        reasons.append("bad_end_particle")
 
     # 시작이 접속사(And, But, Because...)이면 어색한 조각일 가능성
     if first_token.pos_ in config.bad_start_pos:

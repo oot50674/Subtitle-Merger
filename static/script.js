@@ -11,6 +11,7 @@ $(document).ready(function() {
     // 캐시에서 자막 병합 옵션 설정 값 복구
     var cachedOptions = localStorage.getItem('subtitleMergeOptions');
     var defaultAnalyzerLanguage = 'en';
+    var supportedAnalyzerLanguages = ['en', 'ja', 'ko'];
     if (cachedOptions) {
         var options = JSON.parse(cachedOptions);
         
@@ -42,6 +43,9 @@ $(document).ready(function() {
             cachedLanguage = defaultAnalyzerLanguage;
         } else {
             cachedLanguage = cachedLanguage.toLowerCase();
+            if (supportedAnalyzerLanguages.indexOf(cachedLanguage) === -1) {
+                cachedLanguage = defaultAnalyzerLanguage;
+            }
         }
         $('#segment-analyzer-language').val(cachedLanguage);
     } else {
@@ -91,10 +95,18 @@ $(document).ready(function() {
         // 자막 병합 옵션 설정
         var analyzerThreshold = parseFloat($('#segment-analyzer-threshold').val());
         if (isNaN(analyzerThreshold)) {
-            analyzerThreshold = 0.7;
+            analyzerThreshold = 0.9;
         }
 
-        var analyzerLanguage = $('#segment-analyzer-language').val() || 'en';
+        var analyzerLanguage = $('#segment-analyzer-language').val();
+        if (typeof analyzerLanguage !== 'string') {
+            analyzerLanguage = defaultAnalyzerLanguage;
+        } else {
+            analyzerLanguage = analyzerLanguage.toLowerCase();
+            if (supportedAnalyzerLanguages.indexOf(analyzerLanguage) === -1) {
+                analyzerLanguage = defaultAnalyzerLanguage;
+            }
+        }
         var options = {
             enableBasicMerge: $('#enable-basic-merge').is(':checked'),      // 기본 병합 기능 활성화 여부
             enableSpaceMerge: $('#enable-space-merge').is(':checked'),      // 병합 시 띄어쓰기 추가 여부
