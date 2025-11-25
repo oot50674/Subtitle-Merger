@@ -40,7 +40,7 @@
 
 ```bash
 # Repository Clone
-git clone [https://github.com/your-repo/subtitle-merger.git](https://github.com/your-repo/subtitle-merger.git)
+git clone [https://github.com/oot50674/subtitle-merger.git](https://github.com/oot50674/subtitle-merger.git)
 cd subtitle-merger
 
 # Build & Run
