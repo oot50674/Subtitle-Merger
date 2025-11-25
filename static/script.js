@@ -89,6 +89,10 @@ $(document).ready(function() {
     $('#enable-segment-analyzer').trigger('change');
 
     $('#process-btn').click(function() {
+        var $btn = $(this);
+        var originalText = $btn.text();
+        $btn.prop('disabled', true).text('처리 중...');
+
         var files = $('#srt-files')[0].files;
         // 자막 병합 옵션 설정
         var analyzerLanguage = $('#segment-analyzer-language').val();
@@ -109,15 +113,15 @@ $(document).ready(function() {
             enableAIMerge: $('#enable-ai-merge').is(':checked'),            // AI 기반 자막 병합 활성화 여부
             enableMinDurationRemove: $('#enable-min-duration-remove').is(':checked'),
             enableSegmentAnalyzer: $('#enable-segment-analyzer').is(':checked'),
-            minTextLength: parseInt($('#min-text-length').val()) || 1,      // 병합 시 각 자막의 최소 문자 수
-            maxMergeCount: parseInt($('#max-merge-count').val()) || 2,      // 병합할 최대 자막 개수
-            candidateChunkSize: parseInt($('#candidate-chunk-size').val()) || 3, // 비교할 자막 청크 크기
-            maxTextLength: parseInt($('#max-text-length').val()) || 50,     // 최대 병합 문자열 길이
-            maxBasicGap: parseInt($('#max-basic-gap').val()) || 500,        // 기본 병합 시간 간격 (밀리초)
-            maxDuplicateGap: parseInt($('#max-duplicate-gap').val()) || 300, // 중복 병합 시간 간격 (밀리초)
-            maxEndStartGap: parseInt($('#max-end-start-gap').val()) || 300,   // 앞뒤 자막 병합 시간 간격 (밀리초)
+            minTextLength: getNumericInputValue('#min-text-length', 1),      // 병합 시 각 자막의 최소 문자 수
+            maxMergeCount: getNumericInputValue('#max-merge-count', 2),      // 병합할 최대 자막 개수
+            candidateChunkSize: getNumericInputValue('#candidate-chunk-size', 3), // 비교할 자막 청크 크기
+            maxTextLength: getNumericInputValue('#max-text-length', 50),     // 최대 병합 문자열 길이
+            maxBasicGap: getNumericInputValue('#max-basic-gap', 500),        // 기본 병합 시간 간격 (밀리초)
+            maxDuplicateGap: getNumericInputValue('#max-duplicate-gap', 300), // 중복 병합 시간 간격 (밀리초)
+            maxEndStartGap: getNumericInputValue('#max-end-start-gap', 300),   // 앞뒤 자막 병합 시간 간격 (밀리초)
             // similarityThreshold removed
-            minDurationMs: parseInt($('#min-duration-ms').val()) || 300,
+            minDurationMs: getNumericInputValue('#min-duration-ms', 300),
             segmentAnalyzerLanguage: analyzerLanguage.toLowerCase()
         };
 
@@ -182,6 +186,9 @@ $(document).ready(function() {
                 },
                 error: function(xhr, status, error) {
                     alert('파일 처리 중 오류가 발생했습니다: ' + error);
+                },
+                complete: function() {
+                    $btn.prop('disabled', false).text(originalText);
                 }
             });
         } else {
@@ -189,6 +196,7 @@ $(document).ready(function() {
             var input = $('#input-srt').val();
             if (input.trim() === '') {
                 alert('SRT 파일을 업로드하거나 자막 내용을 입력해주세요.');
+                $btn.prop('disabled', false).text(originalText);
                 return;
             }
 
@@ -215,6 +223,9 @@ $(document).ready(function() {
                 error: function(xhr, status, error) {
                     alert('텍스트 처리 중 오류가 발생했습니다: ' + error);
                     $('#output-srt').val('');
+                },
+                complete: function() {
+                    $btn.prop('disabled', false).text(originalText);
                 }
             });
         }
@@ -319,6 +330,11 @@ function toggleInputGroup(groupSelector, enable) {
             $input.prop('disabled', !enable);
         }
     });
+}
+
+function getNumericInputValue(selector, defaultValue) {
+    var parsed = parseInt($(selector).val(), 10);
+    return isNaN(parsed) ? defaultValue : parsed;
 }
 
 function addSaveAllButton() {
