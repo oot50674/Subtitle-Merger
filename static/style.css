@@ -14,6 +14,10 @@
 }
 
 /* 기본 설정 */
+html, body {
+    height: 100%;
+}
+
 body,
 .app-body {
     font-family: 'Noto Sans KR', sans-serif;
@@ -22,6 +26,9 @@ body,
     background-color: var(--color-bg);
     color: var(--color-text);
     line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
 }
 
 a {
@@ -37,6 +44,8 @@ a {
 .layout-footer {
     border-top: 1px solid var(--color-border);
     border-bottom: none;
+    /* Ensure footer does not shrink and remains at bottom when page content is small */
+    flex-shrink: 0;
 }
 
 .header-wrapper,
@@ -81,13 +90,15 @@ a {
     transition: border-color 0.2s ease, transform 0.2s ease;
 }
 
-.ghost-btn:hover {
+.ghost-btn:not(:disabled):hover {
     border-color: var(--color-primary);
     transform: translateY(-2px);
 }
 
 .layout-main {
     padding: 40px 20px 60px;
+    /* Allow main content to expand and push footer to bottom when necessary */
+    flex: 1 0 auto;
 }
 
 .container {
@@ -184,6 +195,12 @@ a {
     resize: vertical;
     box-sizing: border-box;
     background: #fdfdfd;
+    transition: min-height 0.2s ease, height 0.2s ease;
+}
+
+.app-textarea:placeholder-shown {
+    min-height: 120px;
+    height: 120px;
 }
 
 .app-textarea:focus,
@@ -233,7 +250,7 @@ button {
     box-shadow: 0 10px 20px rgba(59, 130, 246, 0.2);
 }
 
-.primary-btn:hover {
+.primary-btn:not(:disabled):hover {
     background: var(--color-primary-dark);
     transform: translateY(-2px);
 }
@@ -244,13 +261,24 @@ button {
     box-shadow: 0 10px 20px rgba(16, 185, 129, 0.2);
 }
 
-.secondary-btn:hover {
+.secondary-btn:not(:disabled):hover {
     background: var(--color-secondary-dark);
     transform: translateY(-2px);
 }
 
 .wide-btn {
     width: 100%;
+}
+
+/* Disabled button styles (no hover, show not-allowed cursor and muted appearance) */
+button:disabled,
+.primary-btn:disabled,
+.secondary-btn:disabled,
+.ghost-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+    transform: none;
+    box-shadow: none;
 }
 
 .option-list {
